@@ -1,4 +1,4 @@
-"""Lexer untuk subset SQL. Aturan lengkap: SPESIFIKASI.md bagian 2."""
+﻿"""Lexer untuk subset SQL. Aturan lengkap: SPESIFIKASI.md bagian 2."""
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -110,16 +110,16 @@ class Lexer:
             # TODO(T3): dukung komentar blok /* ... */ (SPESIFIKASI.md bagian 2.3).
             self._advance() # Konsumsi '*'
 
-            while not self._at_end(): 
+            while not self._at_end():
                 if self._peek() == "*" and self._peek(1) == "/":
                     self._advance()  # Konsumsi '*'
-                    self._advance()  # Konsumsi '/'           
+                    self._advance()  # Konsumsi '/'
                     return
-                
+
                 self._advance()
 
             raise LexError("komentar blok tidak ditutup", line, col)
-        
+
         if ch in _SINGLE:
             self._add(_SINGLE[ch], ch, line, col)
             return
@@ -169,13 +169,23 @@ class Lexer:
 
     def _string(self, line: int, col: int) -> None:
         chars: list[str] = []
+
         while True:
             if self._at_end():
                 raise LexError("string tidak ditutup", line, col)
+
             ch = self._advance()
+
             if ch == "'":
+                if self._peek() == "'":
+                    self._advance()  # Konsumsi karakter kedua
+                    chars.append("'")
+                    continue
+
                 break
+
             chars.append(ch)
+
         self._add(TokenType.STRING, "".join(chars), line, col)
 
     def _number(self, line: int, col: int) -> None:

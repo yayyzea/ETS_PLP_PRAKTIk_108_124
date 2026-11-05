@@ -55,3 +55,4 @@ def test_karakter_tidak_dikenal():
     with pytest.raises(LexError) as info:
         tokenize("SELECT\n$")
     assert info.value.line == 2
+

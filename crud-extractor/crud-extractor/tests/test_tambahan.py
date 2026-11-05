@@ -6,8 +6,13 @@ Isi dengan:
 2. Lima test kasus tepi, masing-masing dengan komentar singkat mengapa kasus itu berisiko.
 """
 
-from crud.lexer import tokenize, TokenType
+import pytest
+
+from crud.lexer import LexError, TokenType, TokenType as T, tokenize
 from crud.parser import parse_sql
+
+def values(src):
+    return [t.value for t in tokenize(src) if t.type != T.EOF]
 
 # LEXER
 
@@ -15,7 +20,7 @@ def test_regresi_keyword_huruf_kecil():
     # Bug: keyword SQL huruf kecil sebelumnya tidak dikenali sebagai keyword karena pemeriksaan hanya menggunakan huruf kapital.
     tokens = tokenize("select * from pelanggan")
 
-    assert tokens[0].type == TokenType.KEYWORD
+    assert tokens[0].type == T.KEYWORD
     assert tokens[0].value == "SELECT"
 
 
@@ -29,6 +34,49 @@ def test_regresi_komentar_blok_multiline():
     assert "*" in values
     assert "FROM" in values
     assert "pelanggan" in values
+
+def test_operator_tidak_sama_dengan():
+    # Bug: Operator "<>" sebelumnya tidak dikenali sebagai satu token utuh.
+    assert values("a <> b") == ["a", "<>", "b"]
+
+
+def test_string_escaped_quote():
+    # Bug: Dua kutip tunggal berturut-turut harus dibaca sebagai satu karakter kutip.
+    toks = tokenize("'O''Brien'")
+
+    assert toks[0].type == T.STRING
+    assert toks[0].value == "O'Brien"
+
+
+def test_string_multiple_escaped_quotes():
+     # Risiko: Beberapa kutip tunggal yang di-escape dalam satu string dapat menyebabkan kesalahan pembacaan isi string.
+    toks = tokenize("'It''s Noya''s book'")
+
+    assert toks[0].type == T.STRING
+    assert toks[0].value == "It's Noya's book"
+
+
+def test_string_kosong():
+    # Risiko: String kosong dapat salah dianggap sebagai string yang tidak ditutup.
+    toks = tokenize("''")
+
+    assert toks[0].type == T.STRING
+    assert toks[0].value == ""
+
+
+def test_string_operator_dan_tanda_baca():
+    # Risiko: Operator dan tanda baca di dalam string tidak boleh dianggap token terpisah.
+    toks = tokenize("'a <> b, c >= d!'")
+
+    assert toks[0].type == T.STRING
+    assert toks[0].value == "a <> b, c >= d!"
+
+
+def test_string_tidak_ditutup():
+    # Risiko: String tanpa kutip penutup harus menghasilkan LexError.
+    with pytest.raises(LexError):
+        tokenize("'Hello")
+
 
 
 # PARSER
