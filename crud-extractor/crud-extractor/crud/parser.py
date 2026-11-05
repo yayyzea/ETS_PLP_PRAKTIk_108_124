@@ -253,7 +253,7 @@ class Parser:
         # OR dan AND: operator logika biner, asosiatif kiri.
         left = self._and()
         while self._check_kw("OR"):
-            self._advance
+            self._advance()
             left = ast.BinaryOp(left, "OR", self._and())
         return left
 
