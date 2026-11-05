@@ -106,3 +106,16 @@ def test_edge_multiple_statements_and_empty_statement():
 
     assert script.errors == []
     assert len(script.statements) == 2
+
+def test_regresi_parser_melanjutkan_setelah_statement_error():
+    # Bug: Parser sebelumnya membuang seluruh sisa input ketika menemukan statement yang tidak valid.
+    script = parse_sql(
+        "SELECT FROM pelanggan; "
+        "SELECT * FROM produk;"
+    )
+
+    assert len(script.errors) == 1
+    assert len(script.statements) == 1
+
+    # Pastikan statement kedua tetap berhasil diproses.
+    assert script.statements[0].sources[0].name == "produk"

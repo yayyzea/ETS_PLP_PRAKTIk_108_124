@@ -91,6 +91,8 @@ class Parser:
         # Panic mode (Crafting Interpreters bab 6): buang token sampai
         # titik aman, lalu lanjutkan parsing.
         while not self._at_end():
+            if self._match(T.SEMICOLON):
+                return
             self._advance()
 
     def _statement(self):
