@@ -9,6 +9,7 @@ Isi dengan:
 import pytest
 
 from crud.lexer import LexError, TokenType, TokenType as T, tokenize
+from crud.analyzer import analyze_statement
 from crud.parser import parse_sql
 from crud import ast_nodes as ast
 from crud.resolver import Resolver
@@ -288,3 +289,93 @@ def test_resolver_subquery_from_dengan_alias():
     assert resolved[("p", "id")] == "pelanggan"
     assert resolved[("d", "id")] == "<subquery d>"
     assert diags == []
+
+# ANALYZER
+
+def test_regresi_update_dengan_subquery():
+    # Risiko: Tabel yang dibaca oleh subquery UPDATE bisa tidak tercatat sebagai operasi Read.
+    script = parse_sql(
+        "UPDATE pelanggan "
+        "SET status = 'aktif' "
+        "WHERE id IN ("
+        "SELECT pelanggan_id FROM pesanan"
+        ")"
+    )
+
+    assert script.errors == []
+
+    result = analyze_statement(script.statements[0])
+
+    assert result == {
+        "pelanggan": {"U"},
+        "pesanan": {"R"}
+    }
+
+def test_regresi_update_subquery_di_assignment():
+    # Risiko: Subquery di dalam nilai assignment dapat terlewat saat mengumpulkan tabel yang dibaca.
+    script = parse_sql(
+        "UPDATE produk "
+        "SET stok = ("
+        "SELECT SUM(jumlah) FROM detail_pesanan"
+        ")"
+    )
+
+    assert script.errors == []
+
+    result = analyze_statement(script.statements[0])
+
+    assert result == {
+        "produk": {"U"},
+        "detail_pesanan": {"R"}
+    }
+
+def test_regresi_insert_select():
+    # Risiko: Tabel sumber SELECT bisa terlewat dan tidak tercatat sebagai operasi Read.
+    script = parse_sql(
+        "INSERT INTO arsip_pelanggan "
+        "SELECT id FROM pelanggan"
+    )
+    assert script.errors == []
+
+    result = analyze_statement(script.statements[0])
+
+    assert result == {
+        "arsip_pelanggan": {"C"},
+        "pelanggan": {"R"}
+    }
+
+def test_regresi_delete_dengan_subquery():
+    # Risiko: Tabel yang dibaca oleh subquery DELETE bisa tidak tercatat sebagai Read.
+    script = parse_sql(
+        "DELETE FROM pelanggan "
+        "WHERE id IN ("
+        "SELECT pelanggan_id FROM pesanan"
+        ")"
+    )
+    assert script.errors == []
+
+    result = analyze_statement(script.statements[0])
+
+    assert result == {
+        "pelanggan": {"D"},
+        "pesanan": {"R"}
+    }
+
+def test_analyzer_gabungan_operasi_satu_tabel():
+    # Risiko: Operasi dari beberapa statement pada tabel yang sama bisa tidak tergabung.
+    script = parse_sql(
+        "SELECT * FROM pelanggan; "
+        "UPDATE pelanggan SET status = 'aktif'"
+    )
+    assert script.errors == []
+
+    result = {}
+
+    for statement in script.statements:
+        usage = analyze_statement(statement)
+        for table, operations in usage.items():
+            result.setdefault(table, set()).update(operations)
+
+    assert result == {
+        "pelanggan": {"R", "U"}
+    }
