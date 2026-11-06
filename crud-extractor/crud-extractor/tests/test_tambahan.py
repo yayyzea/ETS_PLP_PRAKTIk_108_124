@@ -167,3 +167,15 @@ def test_regresi_parser_melanjutkan_setelah_statement_error():
 
     # Pastikan statement kedua tetap berhasil diproses.
     assert script.statements[0].sources[0].name == "produk"
+
+def test_regresi_parser_multiple_statement_error():
+    # Risiko: Beberapa statement rusak dapat membuat parser berhenti sebelum mencapai statement valid.
+    script = parse_sql(
+        "SELECT FROM pelanggan; "
+        "INSERT INTO ; "
+        "SELECT * FROM produk;"
+    )
+
+    assert len(script.errors) == 2
+    assert len(script.statements) == 1
+    assert script.statements[0].sources[0].name == "produk"
