@@ -84,7 +84,7 @@ def test_string_tidak_ditutup():
 
 # PARSER
 
-def test_regresi_insert_select():
+def test_parser_insert_select():
     # Bug: Parser sebelumnya menolak INSERT ... SELECT.
     script = parse_sql(
         "INSERT INTO arsip (id) SELECT id FROM pesanan"
@@ -329,7 +329,7 @@ def test_regresi_update_subquery_di_assignment():
         "detail_pesanan": {"R"}
     }
 
-def test_regresi_insert_select():
+def test_analyzer_insert_select():
     # Risiko: Tabel sumber SELECT bisa terlewat dan tidak tercatat sebagai operasi Read.
     script = parse_sql(
         "INSERT INTO arsip_pelanggan "

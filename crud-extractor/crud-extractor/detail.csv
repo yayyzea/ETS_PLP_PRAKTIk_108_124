@@ -7,6 +7,5 @@ audit.sql,12,SELECT,pelanggan,R
 audit.sql,12,SELECT,pesanan,R
 audit.sql,16,DELETE,sesi,D
 audit.sql,18,SELECT,pengguna,R
-audit.sql,20,UPDATE,pelanggan,U
+audit.sql,20,UPDATE,pelanggan,R
 audit.sql,20,UPDATE,pesanan,U
-campuran_error.sql,2,SELECT,pelanggan,R
