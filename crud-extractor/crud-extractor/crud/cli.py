@@ -13,16 +13,30 @@ from .ast_nodes import pretty
 from .parser import parse_sql
 from .pipeline import analyze_source
 from .resolver import Resolver
+from .lexer import LexError
 
+def _print_ast(path: Path) -> bool:
+    try:
+        script = parse_sql(path.read_text(encoding="utf-8"))
+    except LexError as err:
+        print(f"{path.name}: LEX ERROR: {err}", file=sys.stderr)
+        return True
 
-def _print_ast(path: Path) -> None:
-    script = parse_sql(path.read_text(encoding="utf-8"))
-    Resolver().resolve_script(script)
+    diagnostics = Resolver().resolve_script(script)
+
+    for diag in diagnostics:
+        print(f"{path.name}: {diag}", file=sys.stderr)
+
     for stmt in script.statements:
         print(f"--- baris {stmt.line} ---")
         print(pretty(stmt))
+
     for err in script.errors:
         print(f"PARSE ERROR: {err}")
+
+    return bool(script.errors) or any(
+        diag.level == "error" for diag in diagnostics
+    )
 
 
 def main(argv=None) -> int:
@@ -35,10 +49,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.ast:
+        had_error = False
         for path in args.files:
             print(f"===== {path} =====")
-            _print_ast(path)
-        return 0
+            if _print_ast(path):
+                had_error = True
+        return 1 if had_error else 0
 
     had_error = False
     results = {}
@@ -53,6 +69,8 @@ def main(argv=None) -> int:
             print(f"{path.name}: PARSE ERROR: {err}", file=sys.stderr)
         for diag in res.diagnostics:
             print(f"{path.name}: {diag}", file=sys.stderr)
+            if diag.level == "error":
+                had_error = True
 
     tables = sorted({t for r in results.values() for t in r.matrix()})
     with args.out.open("w", newline="", encoding="utf-8") as fh:
