@@ -57,35 +57,54 @@ def main(argv=None) -> int:
         return 1 if had_error else 0
 
     had_error = False
-    results = {}
+    results = []
+
     for path in args.files:
+        name = (
+            path.as_posix()
+            if sum(1 for p in args.files if p.name == path.name) > 1
+            else path.name
+        )
+
         res = analyze_source(path.read_text(encoding="utf-8"))
-        results[path.name] = res
+        results.append((name, res))
+
         if res.lex_error:
             had_error = True
-            print(f"{path.name}: LEX ERROR: {res.lex_error}", file=sys.stderr)
+            print(f"{name}: LEX ERROR: {res.lex_error}", file=sys.stderr)
+
         for err in res.parse_errors:
             had_error = True
-            print(f"{path.name}: PARSE ERROR: {err}", file=sys.stderr)
+            print(f"{name}: PARSE ERROR: {err}", file=sys.stderr)
+
         for diag in res.diagnostics:
-            print(f"{path.name}: {diag}", file=sys.stderr)
+            print(f"{name}: {diag}", file=sys.stderr)
             if diag.level == "error":
                 had_error = True
 
-    tables = sorted({t for r in results.values() for t in r.matrix()})
+    tables = sorted({t for _, r in results for t in r.matrix()})
+
     with args.out.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["file", *tables])
-        for name, res in results.items():
-            m = res.matrix()
-            w.writerow([name, *[m.get(t, "") for t in tables]])
+
+        for name, res in results:
+            matrix = res.matrix()
+            w.writerow([
+                name,
+                *[
+                    "".join(c for c in "CRUD" if c in matrix.get(t, set()))
+                    for t in tables
+                ],
+            ])
+
     print(f"CRUD matrix ditulis ke {args.out}")
 
     if args.detail:
         with args.detail.open("w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(["file", "baris", "jenis", "tabel", "operasi"])
-            for name, res in results.items():
+            for name, res in results:
                 for st in res.statements:
                     for table, ops in st.tables.items():
                         w.writerow([name, st.line, st.kind, table, ops])
@@ -95,14 +114,13 @@ def main(argv=None) -> int:
         with args.kolom.open("w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(["file", "baris", "tabel", "kolom", "operasi"])
-            for name, res in results.items():
+            for name, res in results:
                 for st in res.statements:
                     for table, col, op in sorted(st.columns):
                         w.writerow([name, st.line, table, col, op])
         print(f"Penggunaan kolom ditulis ke {args.kolom}")
 
     return 1 if had_error else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
