@@ -1,0 +1,8 @@
+file,baris,jenis,tabel,operasi
+pemeliharaan.sql,3,SELECT,crm.alamat,R
+pemeliharaan.sql,3,SELECT,crm.pelanggan,R
+pemeliharaan.sql,8,UPDATE,crm.pelanggan,U
+pemeliharaan.sql,12,INSERT,crm.log_perubahan,C
+pemeliharaan.sql,12,INSERT,crm.pelanggan,R
+pemeliharaan.sql,15,DELETE,crm.alamat,D
+pemeliharaan.sql,15,DELETE,crm.pelanggan,R
