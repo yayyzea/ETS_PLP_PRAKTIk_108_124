@@ -9,7 +9,7 @@ Isi dengan:
 import pytest
 
 from crud.lexer import LexError, TokenType, TokenType as T, tokenize
-from crud.analyzer import analyze_statement
+from crud.analyzer import analyze_statement, column_usage
 from crud.parser import parse_sql
 from crud import ast_nodes as ast
 from crud.resolver import Resolver
@@ -378,4 +378,86 @@ def test_analyzer_gabungan_operasi_satu_tabel():
 
     assert result == {
         "pelanggan": {"R", "U"}
+    }
+
+
+def test_column_usage_update_sederhana():
+    # Risiko: Kolom yang dibaca dan diubah pada UPDATE bisa tertukar klasifikasinya.
+    script = parse_sql(
+        "UPDATE pelanggan SET level = nama WHERE id = 1"
+    )
+    assert script.errors == []
+    Resolver().resolve_script(script)
+
+    result = column_usage(script.statements[0])
+
+    assert result == {
+        ("pelanggan", "level", "U"),
+        ("pelanggan", "nama", "R"),
+        ("pelanggan", "id", "R"),
+    }
+
+
+def test_column_usage_update_dengan_subquery():
+    # Risiko: Kolom dari tabel dalam subquery UPDATE bisa tidak tercatat.
+    script = parse_sql(
+        "UPDATE pelanggan SET level = nama "
+        "WHERE id IN ("
+        "SELECT pelanggan_id FROM pesanan "
+        "WHERE total > 1000000)"
+    )
+    assert script.errors == []
+    Resolver().resolve_script(script)
+
+    result = column_usage(script.statements[0])
+
+    assert result == {
+        ("pelanggan", "level", "U"),
+        ("pelanggan", "nama", "R"),
+        ("pelanggan", "id", "R"),
+        ("pesanan", "pelanggan_id", "R"),
+        ("pesanan", "total", "R"),
+    }
+
+
+def test_column_usage_insert_select():
+    # Risiko: Kolom tujuan INSERT bisa tertukar dengan kolom sumber SELECT.
+    script = parse_sql(
+        "INSERT INTO arsip_pesanan (id, total) "
+        "SELECT id, total FROM pesanan "
+        "WHERE tanggal < :batas"
+    )
+    assert script.errors == []
+    Resolver().resolve_script(script)
+
+    result = column_usage(script.statements[0])
+
+    assert result == {
+        ("arsip_pesanan", "id", "C"),
+        ("arsip_pesanan", "total", "C"),
+        ("pesanan", "id", "R"),
+        ("pesanan", "total", "R"),
+        ("pesanan", "tanggal", "R"),
+    }
+
+
+def test_column_usage_select_join():
+    # Risiko: Kolom dari beberapa tabel bisa salah dipetakan ketika query menggunakan alias.
+    script = parse_sql(
+        "SELECT p.nama, o.total "
+        "FROM pelanggan p "
+        "JOIN pesanan o ON o.pelanggan_id = p.id "
+        "WHERE o.status = 'LUNAS'"
+    )
+    assert script.errors == []
+    Resolver().resolve_script(script)
+
+    result = column_usage(script.statements[0])
+
+    assert result == {
+        ("pelanggan", "nama", "R"),
+        ("pelanggan", "id", "R"),
+        ("pesanan", "total", "R"),
+        ("pesanan", "pelanggan_id", "R"),
+        ("pesanan", "status", "R"),
     }
