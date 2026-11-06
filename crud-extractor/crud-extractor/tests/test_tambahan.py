@@ -10,6 +10,8 @@ import pytest
 
 from crud.lexer import LexError, TokenType, TokenType as T, tokenize
 from crud.parser import parse_sql
+from crud import ast_nodes as ast
+from crud.resolver import Resolver
 
 def values(src):
     return [t.value for t in tokenize(src) if t.type != T.EOF]
@@ -179,3 +181,110 @@ def test_regresi_parser_multiple_statement_error():
     assert len(script.errors) == 2
     assert len(script.statements) == 1
     assert script.statements[0].sources[0].name == "produk"
+
+# RESOLVER
+
+def resolve(sql):
+    script = parse_sql(sql)
+    assert script.errors == [], script.errors
+    diagnostics = Resolver().resolve_script(script)
+    return script, diagnostics
+
+
+def columns(node):
+    return [
+        n for n in ast.iter_nodes(node)
+        if isinstance(n, ast.ColumnRef)
+    ]
+
+
+def test_resolver_shadowing_alias_scope_dalam():
+    # Alias yang sama pada scope dalam dan luar harus menggunakan deklarasi yang paling dekat.
+    script, diags = resolve(
+        "SELECT p.id FROM pelanggan p "
+        "WHERE EXISTS ("
+        "SELECT p.id FROM transaksi p"
+        ")"
+    )
+    p_columns = [
+        c for c in columns(script)
+        if c.qualifier == "p" and c.name == "id"
+    ]
+    assert len(p_columns) == 2
+    assert p_columns[0].resolved == "pelanggan"
+    assert p_columns[1].resolved == "transaksi"
+    assert diags == []
+
+
+def test_resolver_correlated_subquery():
+    # Subquery dapat menggunakan alias dari scope luar jika alias tersebut tidak ditemukan pada scope dalam.
+    script, diags = resolve(
+        "SELECT p.id FROM pelanggan p "
+        "WHERE EXISTS ("
+        "SELECT t.id FROM transaksi t "
+        "WHERE t.pelanggan_id = p.id"
+        ")"
+    )
+    resolved = {
+        (c.qualifier, c.name): c.resolved
+        for c in columns(script)
+    }
+    assert resolved[("t", "id")] == "transaksi"
+    assert resolved[("t", "pelanggan_id")] == "transaksi"
+    assert resolved[("p", "id")] == "pelanggan"
+    assert diags == []
+
+
+def test_resolver_kolom_ambigu_dua_tabel():
+    # Kolom tanpa qualifier menjadi ambigu jika terdapat
+    # lebih dari satu tabel dalam scope.
+    script, diags = resolve(
+        "SELECT id FROM pelanggan p "
+        "JOIN pesanan o ON p.id = o.pelanggan_id"
+    )
+    id_column = next(
+        c for c in columns(script)
+        if c.qualifier is None and c.name == "id"
+    )
+    assert id_column.resolved is None
+    assert any(
+        d.level == "warning" and "ambigu" in d.message
+        for d in diags
+    )
+
+
+def test_resolver_scope_delete_dibersihkan():
+    # Alias dari DELETE tidak boleh terbawa ke statement berikutnya.
+    script, diags = resolve(
+        "DELETE FROM pelanggan p WHERE p.id = 1; "
+        "SELECT p.id FROM pesanan"
+    )
+    p_columns = [
+        c for c in columns(script)
+        if c.qualifier == "p"
+    ]
+    # Ada dua p.id: satu dari DELETE dan satu dari SELECT.
+    assert len(p_columns) == 2
+    # p.id pada DELETE harus ter-resolve ke pelanggan.
+    assert p_columns[0].resolved == "pelanggan"
+    # p.id pada SELECT tidak boleh memakai alias dari DELETE.
+    assert p_columns[1].resolved is None
+    assert any(
+        d.level == "error" and "'p'" in d.message
+        for d in diags
+    )
+
+
+def test_resolver_subquery_from_dengan_alias():
+    # Subquery di FROM dikenali melalui aliasnya, sedangkan kolom di dalam subquery tetap di-resolve sendiri.
+    script, diags = resolve(
+        "SELECT d.id FROM "
+        "(SELECT p.id FROM pelanggan p) d"
+    )
+    resolved = {
+        (c.qualifier, c.name): c.resolved
+        for c in columns(script)
+    }
+    assert resolved[("p", "id")] == "pelanggan"
+    assert resolved[("d", "id")] == "<subquery d>"
+    assert diags == []
