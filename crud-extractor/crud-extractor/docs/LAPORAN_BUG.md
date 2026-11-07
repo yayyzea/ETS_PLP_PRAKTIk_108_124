@@ -317,3 +317,153 @@ Test memeriksa struktur AST dengan memastikan bahwa operator utama adalah `OR` d
 
 **Peran AI.**
 AI membantu menganalisis kesalahan pengelompokan ekspresi dan menjelaskan hubungan antara presedensi operator dengan struktur AST. AI juga memberikan arahan untuk memisahkan pemrosesan `AND` dan `OR` ke dalam fungsi yang berbeda. Perbaikan kemudian diterapkan pada parser dan diverifikasi melalui pemeriksaan struktur AST menggunakan test regresi.
+
+## Bug 8: Kesalahan klasifikasi operasi read pada statement UPDATE
+
+**Ditemukan oleh:** Kayla · **Diperbaiki oleh:** Kayla
+
+**Gejala.**
+
+Ketika analyzer memproses statement `UPDATE` yang memiliki subquery pada kondisi `WHERE` atau nilai assignment, analyzer sebelumnya mengklasifikasikan tabel yang digunakan oleh subquery sebagai operasi Update (U), padahal tabel tersebut hanya digunakan untuk membaca data.
+
+Contoh input:
+
+```sql
+UPDATE pelanggan
+SET status = 'aktif'
+WHERE id IN (
+    SELECT pelanggan_id FROM pesanan
+);
+```
+
+Output yang didapat sebelum perbaikan adalah:
+
+```python
+{
+    "pelanggan": {"U"},
+    "pesanan": {"U"}
+}
+```
+
+Hasil tersebut tidak sesuai karena tabel `pesanan` hanya digunakan untuk membaca data melalui subquery, bukan untuk diperbarui.
+
+Berdasarkan ketentuan operasi CRUD pada SPESIFIKASI.md bagian 5, tabel yang menjadi target statement UPDATE harus diklasifikasikan sebagai operasi Update (U), sedangkan tabel yang datanya dibaca melalui subquery harus diklasifikasikan sebagai operasi Read (R).
+
+Output yang diharapkan:
+
+```python
+{
+    "pelanggan": {"U"},
+    "pesanan": {"R"}
+}
+```
+
+**Reproduksi minimal.**
+
+```sql
+UPDATE a
+SET status = 'aktif'
+WHERE id IN (
+    SELECT id FROM b
+);
+```
+
+**Akar masalah.**
+
+Kesalahan terjadi karena fungsi `analyze_statement()` pada analyzer sebelumnya menggunakan jenis operasi U ketika memanggil fungsi `_collect()` untuk mengumpulkan tabel dari ekspresi assignment dan kondisi `WHERE` pada statement UPDATE. Akibatnya, seluruh tabel yang ditemukan dalam ekspresi tersebut, termasuk tabel yang hanya dibaca melalui subquery, ikut diklasifikasikan sebagai operasi Update.
+
+Konsep yang tidak terpenuhi adalah pembedaan konteks penggunaan data, yaitu antara operasi membaca data (Read) dan mengubah data (Update).
+
+Berdasarkan konsep *Crafting Interpreters* Bab 5 – Representing Code dan Bab 6 – Parsing Expressions, AST merepresentasikan struktur sintaks program yang kemudian dapat ditelusuri untuk memproses setiap bagian ekspresi sesuai konteksnya. Dalam kasus ini, proses traversal AST perlu mempertahankan perbedaan antara tabel target yang diperbarui dan tabel sumber yang hanya dibaca.
+
+**Perbaikan.**
+
+Perbaikan dilakukan pada file `crud/analyzer.py`, khususnya fungsi `analyze_statement()`.
+
+Jenis operasi pada pemanggilan `_collect()` untuk ekspresi assignment dan kondisi `WHERE` diubah dari U menjadi R. Sementara itu, tabel target statement UPDATE tetap diklasifikasikan sebagai operasi U.
+
+Dengan perubahan tersebut, tabel yang digunakan dalam subquery pada ekspresi assignment maupun kondisi WHERE dapat diklasifikasikan sebagai operasi Read (R), tanpa mengubah klasifikasi tabel target UPDATE.
+
+Alternatif yang dapat digunakan adalah mempertahankan jenis operasi U untuk seluruh ekspresi UPDATE. Namun, pendekatan tersebut tidak dipilih karena akan menyebabkan tabel yang hanya dibaca melalui subquery ikut diklasifikasikan sebagai tabel yang diperbarui.
+
+**Test regresi.**
+
+Nama test:
+- `test_regresi_update_dengan_subquery`
+- `test_regresi_update_subquery_di_assignment`
+
+Kedua test terdapat pada file `tests/test_tambahan.py`.
+
+Test pertama memeriksa klasifikasi tabel yang dibaca melalui subquery pada kondisi WHERE. Test kedua memeriksa klasifikasi tabel yang dibaca melalui subquery pada nilai assignment. Keduanya memastikan tabel sumber diklasifikasikan sebagai operasi Read (R), sedangkan tabel target tetap diklasifikasikan sebagai operasi Update (U).
+
+**Peran AI.**
+
+AI membantu menganalisis kesalahan klasifikasi operasi CRUD pada statement UPDATE dan menjelaskan perbedaan antara operasi Read dan Update. Perbaikan diverifikasi dengan membandingkan kode sebelum dan sesudah commit serta memeriksa hasil pengujian regresi.
+
+## Bug 9: Resolver Tidak Menangani Kolom Tanpa Qualifier
+
+**Ditemukan oleh:** Kayla · **Diperbaiki oleh:** Kayla
+
+**Gejala.**
+
+Ketika resolver menerima referensi kolom tanpa qualifier, misalnya `nama`, resolver sebelumnya belum dapat menentukan tabel asal kolom tersebut meskipun hanya terdapat satu tabel dalam scope terdalam.
+
+Contoh input:
+
+```sql
+SELECT nama FROM pelanggan;
+```
+
+Output aktual sebelum perbaikan:
+
+Referensi kolom `nama` tidak berhasil dihubungkan dengan tabel `pelanggan`. Nilai `ColumnRef.resolved` belum terisi.
+
+Berdasarkan SPESIFIKASI.md bagian 4.3 (Resolusi Kolom), apabila kolom ditulis tanpa qualifier, resolver hanya memeriksa scope terdalam. Jika terdapat tepat satu tabel dalam scope tersebut, kolom harus di-resolve ke tabel itu.
+
+Output yang diharapkan:
+
+```python
+ColumnRef.resolved = "pelanggan"
+```
+
+Spesifikasi juga mengatur bahwa jika terdapat lebih dari satu tabel, resolver harus memberikan warning `kolom 'nama' ambigu tanpa skema` dan mempertahankan nilai `resolved` sebagai `None`.
+
+**Reproduksi minimal.**
+
+```sql
+SELECT nama FROM pelanggan;
+```
+
+**Akar masalah.**
+
+Kesalahan terjadi karena fungsi `_column()` pada resolver sebelumnya hanya menangani referensi kolom yang memiliki qualifier, misalnya `pelanggan.nama`. Untuk kolom tanpa qualifier, implementasi masih berupa bagian yang belum diselesaikan (`TODO`), sehingga resolver belum memeriksa jumlah tabel dalam scope terdalam.
+
+Konsep yang belum diterapkan adalah resolusi nama berdasarkan scope, yaitu menentukan referensi berdasarkan lingkungan tempat nama tersebut digunakan.
+
+Berdasarkan konsep *Crafting Interpreters* Bab 11 – Resolving and Binding, resolver bertugas menentukan hubungan antara suatu referensi nama dengan deklarasi yang sesuai berdasarkan aturan scope. Konsep ini menjadi dasar pemahaman untuk menentukan tabel yang menjadi tujuan referensi kolom. Penerapannya pada proyek ini mengikuti aturan khusus dalam SPESIFIKASI.md bagian 4.3.
+
+**Perbaikan.**
+
+Perbaikan dilakukan pada file `crud/resolver.py`, khususnya fungsi `_column()`.
+
+Implementasi ditambahkan untuk menangani kolom tanpa qualifier dengan memeriksa tabel yang terdapat pada scope terdalam:
+
+- Jika terdapat tepat satu tabel, `ColumnRef.resolved` diisi dengan nama tabel tersebut.
+- Jika terdapat lebih dari satu tabel, resolver memberikan warning bahwa kolom ambigu tanpa skema dan nilai `resolved` tetap `None`.
+- Jika tidak terdapat tabel dalam scope, resolver memberikan warning bahwa kolom tidak dapat ditentukan tanpa tabel.
+
+Alternatif yang dapat digunakan adalah selalu memberikan warning untuk setiap kolom tanpa qualifier. Namun, pendekatan tersebut tidak dipilih karena spesifikasi memperbolehkan resolusi apabila hanya terdapat satu tabel dalam scope terdalam.
+
+**Test regresi.**
+
+Nama test: `test_kolom_tanpa_qualifier_satu_tabel` pada file `tests/test_resolver.py`.
+
+Test memeriksa bahwa kolom tanpa qualifier dapat di-resolve ke tabel apabila hanya terdapat satu tabel dalam scope.
+
+Pengujian tambahan untuk kondisi ambigu juga tersedia melalui `test_resolver_kolom_ambigu_dua_tabel` pada file `tests/test_tambahan.py`. Test tersebut memastikan bahwa resolver memberikan warning dan mempertahankan nilai `resolved` sebagai `None` ketika terdapat lebih dari satu tabel.
+
+Catatan: test resolver tersebut ditambahkan oleh Zahra, sedangkan implementasi resolusi kolom tanpa qualifier diperbaiki oleh Kayla.
+
+**Peran AI.**
+
+AI membantu menganalisis bagian resolver yang belum menangani kolom tanpa qualifier dan menjelaskan aturan resolusi berdasarkan scope. Perbaikan diverifikasi dengan memeriksa pengujian resolver yang tersedia.
