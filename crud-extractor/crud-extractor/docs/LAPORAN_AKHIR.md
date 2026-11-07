@@ -47,9 +47,32 @@ Berdasarkan hasil tersebut, parser memiliki tingkat ketepatan ekstraksi yang leb
 Untuk tiap kasus: SQL-nya, kesalahan regex, dan mengapa parser benar (kaitkan dengan konsep
 lexing, parsing, atau resolusi).
 
-1.
-2.
-3.
+1. Kasus 1: Kesalahan membedakan operasi DELETE dan SELECT
+- SQL: DELETE FROM sesi;
+- Kesalahan regex: Regex menghasilkan dua operasi untuk tabel sesi, yaitu R dan D. Operasi R merupakan false positive karena tabel tersebut bukan dibaca, melainkan dihapus datanya.
+- Mengapa parser benar: Pada implementasi regex, pola FROM selalu dianggap sebagai operasi R, termasuk ketika digunakan dalam statement DELETE FROM. Sementara itu, parser mengenali struktur statement berdasarkan grammar SQL sehingga dapat membedakan DELETE FROM sebagai operasi D, bukan R.
+
+2. Kasus 2: Regex tidak dapat membedakan komentar dan string literal dari perintah SQL
+-SQL:
+-- DELETE FROM pelanggan (baris ini komentar, bukan perintah)
+SELECT p.nama, SUM(o.total) AS omzet
+FROM pelanggan p
+JOIN pesanan o ON o.pelanggan_id = p.id
+WHERE o.status = 'LUNAS' AND o.catatan <> 'FROM rahasia'
+GROUP BY p.nama;
+- Kesalahan regex: Regex membaca DELETE FROM pelanggan di dalam komentar sebagai perintah SQL dan menghasilkan false positive berupa operasi D dan R pada tabel pelanggan. Regex juga membaca teks FROM rahasia di dalam string literal sebagai referensi tabel sehingga menghasilkan false positive operasi R pada tabel rahasia. Selain itu, posisi awal statement dapat keliru karena regex mengambil keyword pertama yang ditemukan di dalam komentar.
+- Mengapa parser benar: Lexer parser mengenali komentar sebagai bagian yang harus dilewati dan string literal sebagai satu token STRING. Teks SQL yang hanya muncul di dalam komentar atau string tidak dianggap sebagai perintah maupun referensi tabel.
+
+3. Kasus 3: Regex gagal menangani komentar multiline
+- SQL:
+/* Skrip pemeliharaan data pelanggan.
+   Catatan lama: UPDATE pelanggan_lama sudah tidak dipakai. */
+SELECT c.id, c.nama, a.kota
+FROM crm.pelanggan c
+LEFT OUTER JOIN crm.alamat a ON a.pelanggan_id = c.id
+WHERE c.nama = 'O''Brien' OR c.kota = 'Bandung' AND c.aktif = 1;
+- Kesalahan regex: Regex membaca UPDATE pelanggan_lama di dalam komentar multiline sebagai perintah UPDATE sehingga menghasilkan false positive berupa operasi U pada tabel pelanggan_lama.
+- Mengapa parser benar: Lexer parser dapat mengenali komentar multiline yang diawali /* dan diakhiri */, sehingga isi komentar tidak diproses sebagai token SQL. Parser hanya menganalisis statement SQL yang sebenarnya dan tidak menghasilkan operasi CRUD dari teks komentar.
 
 ## 3. Batas pendekatan kami
 
