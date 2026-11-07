@@ -3,7 +3,7 @@
 ## 1. Hasil evaluasi
 
 Tempel keluaran `python evaluate.py` setelah `data/ground_truth.csv` dilengkapi.
-
+```
 python evaluate.py
 Belum berlabel (tidak dievaluasi): ast_error.sql
 
@@ -31,7 +31,7 @@ regex         0.65    0.81   0.72
   terlewat (FN):       ('laporan_penjualan.sql', 3, 'pesanan', 'R')
   terlewat (FN):       ('pemeliharaan.sql', 3, 'crm.alamat', 'R')
   terlewat (FN):       ('pemeliharaan.sql', 3, 'crm.pelanggan', 'R')
-
+```
 
 Evaluasi dilakukan terhadap empat file SQL, yaitu audit.sql, campuran_error.sql, laporan_penjualan.sql, dan pemeliharaan.sql, dengan total 27 data acuan (triple) berdasarkan data/ground_truth.csv.
 
@@ -80,9 +80,62 @@ Minimal tiga hal yang **tidak bisa** ditangani dengan benar oleh tool ini meskip
 sudah diperbaiki. Untuk tiap batas: contoh SQL atau situasinya, akibatnya pada CRUD matrix,
 dan informasi apa yang dibutuhkan untuk mengatasinya.
 
-1.
-2.
-3.
+1. Common Table Expression (CTE)
+Contoh SQL:
+```
+WITH pelanggan_aktif AS (
+    SELECT id FROM pelanggan WHERE aktif = 1
+)
+SELECT * FROM pelanggan_aktif;
+```
+- Keterbatasan: Tool belum mendukung CTE yang menggunakan keyword WITH.
+- Dampak pada CRUD matrix: Operasi pembacaan (R) terhadap tabel sumber pelanggan maupun CTE pelanggan_aktif tidak dapat dianalisis dengan benar dan dapat menghasilkan parse error.
+- Informasi yang dibutuhkan: Dukungan grammar untuk deklarasi nama CTE, subquery pembentuknya, dan penggunaan CTE sebagai sumber tabel.
+
+2. UNION
+Contoh SQL:
+```
+SELECT id FROM pelanggan
+UNION
+SELECT id FROM pesanan;
+```
+- Keterbatasan: Grammar parser belum mendukung penggabungan beberapa hasil SELECT menggunakan UNION.
+- Dampak pada CRUD matrix: Pembacaan terhadap tabel pelanggan dan pesanan tidak dapat diproses sebagai satu statement secara benar. Statement dapat menghasilkan parse error sehingga hasil pembacaannya tidak dihitung.
+- Informasi yang dibutuhkan: Dukungan grammar untuk UNION dan UNION ALL, termasuk aturan penggabungan beberapa SELECT dalam satu statement.
+
+3. Data Definition Language (DDL)
+Contoh SQL:
+```
+CREATE TABLE pelanggan (
+    id INT,
+    nama VARCHAR(100)
+);
+ALTER TABLE pelanggan ADD COLUMN aktif BOOLEAN;
+DROP TABLE pelanggan;
+```
+- Keterbatasan: Tool hanya mendukung statement SELECT, INSERT, UPDATE, dan DELETE. Statement DDL seperti CREATE, ALTER, dan DROP belum termasuk dalam grammar maupun aturan operasi proyek.
+- Dampak pada CRUD matrix: Perubahan struktur database tidak direpresentasikan dalam matriks karena belum tersedia kategori operasi khusus untuk DDL.
+- Informasi yang dibutuhkan: Dukungan grammar untuk statement DDL serta perluasan aturan klasifikasi operasi agar perubahan struktur database dapat direpresentasikan.
+
+4. Quoted Identifiers
+Contoh SQL:
+```
+SELECT "customerName"
+FROM "Customer";
+```
+- Keterbatasan: Parser belum mendukung identifier yang ditulis menggunakan tanda kutip.
+- Dampak pada CRUD matrix: Nama tabel atau kolom yang menggunakan tanda kutip dapat menyebabkan parse error sehingga operasi pembacaan tidak tercatat.
+- Informasi yang dibutuhkan: Dukungan lexer dan grammar untuk mengenali quoted identifiers serta aturan penanganan tanda kutip.
+
+5. Views
+Contoh SQL:
+```
+SELECT *
+FROM v_penjualan;
+```
+- Keterbatasan: Tool tidak memiliki informasi skema database untuk mengetahui tabel-tabel yang mendasari sebuah view.
+- Dampak pada CRUD matrix: Tool hanya dapat mencatat pembacaan terhadap v_penjualan, tetapi tidak dapat mengidentifikasi tabel sumber yang digunakan dalam definisi view tersebut.
+- Informasi yang dibutuhkan: Informasi definisi view atau metadata skema database agar hubungan antara view dan tabel sumbernya dapat diketahui.
 
 ## 4. Pembagian kerja
 
