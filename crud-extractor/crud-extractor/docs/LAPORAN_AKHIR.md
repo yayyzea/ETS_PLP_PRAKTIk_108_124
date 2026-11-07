@@ -138,6 +138,7 @@ FROM v_penjualan;
 - Informasi yang dibutuhkan: Informasi definisi view atau metadata skema database agar hubungan antara view dan tabel sumbernya dapat diketahui.
 
 
+
 ## 4. Pembagian Kerja
 
 | Modul/Bagian | Zahra | Kayla |

@@ -183,6 +183,20 @@ def test_regresi_parser_multiple_statement_error():
     assert len(script.statements) == 1
     assert script.statements[0].sources[0].name == "produk"
 
+def test_parser_left_outer_join():
+    from crud.parser import parse_sql
+
+    sql = """
+    SELECT p.id
+    FROM pelanggan p
+    LEFT OUTER JOIN alamat a ON a.pelanggan_id = p.id;
+    """
+
+    result = parse_sql(sql)
+
+    assert len(result.statements) == 1
+    assert result.errors == []
+    
 # RESOLVER
 
 def resolve(sql):
