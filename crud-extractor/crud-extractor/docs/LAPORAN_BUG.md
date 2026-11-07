@@ -318,6 +318,8 @@ Test memeriksa struktur AST dengan memastikan bahwa operator utama adalah `OR` d
 **Peran AI.**
 AI membantu menganalisis kesalahan pengelompokan ekspresi dan menjelaskan hubungan antara presedensi operator dengan struktur AST. AI juga memberikan arahan untuk memisahkan pemrosesan `AND` dan `OR` ke dalam fungsi yang berbeda. Perbaikan kemudian diterapkan pada parser dan diverifikasi melalui pemeriksaan struktur AST menggunakan test regresi.
 
+---
+
 ## Bug 8: Kesalahan klasifikasi operasi read pada statement UPDATE
 
 **Ditemukan oleh:** Kayla · **Diperbaiki oleh:** Kayla
@@ -400,6 +402,8 @@ Test pertama memeriksa klasifikasi tabel yang dibaca melalui subquery pada kondi
 
 AI membantu menganalisis kesalahan klasifikasi operasi CRUD pada statement UPDATE dan menjelaskan perbedaan antara operasi Read dan Update. Perbaikan diverifikasi dengan membandingkan kode sebelum dan sesudah commit serta memeriksa hasil pengujian regresi.
 
+---
+
 ## Bug 9: Resolver Tidak Menangani Kolom Tanpa Qualifier
 
 **Ditemukan oleh:** Kayla · **Diperbaiki oleh:** Kayla
@@ -467,3 +471,44 @@ Catatan: test resolver tersebut ditambahkan oleh Zahra, sedangkan implementasi r
 **Peran AI.**
 
 AI membantu menganalisis bagian resolver yang belum menangani kolom tanpa qualifier dan menjelaskan aturan resolusi berdasarkan scope. Perbaikan diverifikasi dengan memeriksa pengujian resolver yang tersedia.
+
+---
+
+## Bug 10: Parser Tidak Dapat Menangani INSERT ... SELECT
+
+**Ditemukan oleh:** Zahra · **Diperbaiki oleh:** Zahra
+
+**Gejala.**
+Ketika parser menemukan pernyataan `INSERT` yang menggunakan `SELECT` sebagai sumber data, pernyataan tersebut tidak dapat diproses dengan benar. Akibatnya, parser menghasilkan kesalahan meskipun sintaks SQL yang digunakan merupakan bentuk pernyataan yang valid.
+Contoh input:
+```sql
+INSERT INTO pelanggan_arsip (id, nama)
+SELECT id, nama FROM pelanggan;
+```
+Output yang didapat sebelum perbaikan adalah parser menghasilkan `ParseError` karena hanya mengenali bentuk `INSERT` yang menggunakan `VALUES` sebagai sumber data.
+Berdasarkan SPESIFIKASI.md bagian INSERT, pernyataan `INSERT` dapat menggunakan `VALUES` maupun `SELECT` sebagai sumber data.
+Output yang diharapkan adalah parser dapat mengenali pernyataan `INSERT ... SELECT` dan menyimpan informasi pernyataan `SELECT` tersebut ke dalam AST agar dapat diproses pada tahap berikutnya.
+
+**Reproduksi minimal.**
+```sql
+INSERT INTO arsip (id)
+SELECT id FROM pelanggan;
+```
+
+**Akar masalah.**
+Kesalahan terjadi karena implementasi parser pada pernyataan `INSERT` belum menangani kemungkinan penggunaan `SELECT` sebagai sumber data. Parser hanya memproses bentuk `INSERT ... VALUES`, sehingga ketika menemukan keyword `SELECT`, parser menganggap sintaks tersebut tidak sesuai dengan aturan yang dikenali.
+Konsep yang tidak terpenuhi adalah penanganan alternatif produksi grammar dalam proses parsing. Parser harus dapat mengenali beberapa bentuk sintaks yang diperbolehkan oleh grammar, bukan hanya satu bentuk saja.
+Berdasar konsep Crafting Interpreters Bab 6 – Parsing Expressions, parser bertugas mengenali struktur sintaks berdasarkan aturan grammar dan membentuk representasi struktur program. Dalam kasus ini, aturan `INSERT` perlu mendukung dua kemungkinan sumber data, yaitu `VALUES` dan `SELECT`.
+
+**Perbaikan.**
+Perbaikan dilakukan pada file `crud/parser.py`, khususnya fungsi `_insert()`.
+Parser diperbaiki agar dapat membedakan sumber data setelah bagian `INSERT INTO` dan daftar kolom. Jika menemukan keyword `VALUES`, parser memproses daftar nilai seperti sebelumnya. Namun, jika menemukan keyword `SELECT`, parser memanggil proses parsing `SELECT` dan menyimpan hasilnya sebagai bagian dari AST `Insert` melalui atribut `query`.
+Dengan demikian, kedua bentuk pernyataan `INSERT ... VALUES` dan `INSERT ... SELECT` dapat dikenali tanpa mengganggu penanganan bentuk `INSERT` yang sudah tersedia.
+Alternatif yang dapat digunakan adalah mengubah hasil `SELECT` menjadi daftar nilai secara langsung di dalam parser. Namun, pendekatan tersebut tidak dipilih karena parser seharusnya hanya membentuk struktur sintaks ke dalam AST. Pemrosesan dan analisis hubungan antara tabel tujuan dan tabel sumber lebih tepat dilakukan pada tahap berikutnya.
+
+**Test regresi.**
+Nama test: `test_parser_insert_select` pada file `tests/test_tambahan.py`.
+Test memeriksa bahwa parser dapat mengenali pernyataan `INSERT ... SELECT` sebagai satu pernyataan tanpa menghasilkan kesalahan parsing. Setelah perbaikan, test berhasil dijalankan.
+
+**Peran AI.**
+AI membantu mengidentifikasi bahwa parser perlu mendukung bentuk `INSERT` dengan sumber data berupa `SELECT`, bukan hanya `VALUES`. AI juga membantu memberikan arahan mengenai penyesuaian grammar dan penyimpanan hasil parsing ke dalam AST. Implementasi kemudian diterapkan pada parser dan diverifikasi melalui test regresi yang memeriksa keberhasilan parsing pernyataan `INSERT ... SELECT`.
