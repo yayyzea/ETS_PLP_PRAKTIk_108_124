@@ -137,6 +137,23 @@ FROM v_penjualan;
 - Dampak pada CRUD matrix: Tool hanya dapat mencatat pembacaan terhadap v_penjualan, tetapi tidak dapat mengidentifikasi tabel sumber yang digunakan dalam definisi view tersebut.
 - Informasi yang dibutuhkan: Informasi definisi view atau metadata skema database agar hubungan antara view dan tabel sumbernya dapat diketahui.
 
-## 4. Pembagian kerja
 
-Siapa mengerjakan apa, dan bagaimana kalian memastikan keduanya memahami seluruh kode.
+## 4. Pembagian Kerja
+
+| Modul/Bagian | Zahra | Kayla |
+|---|---|---|
+| **Lexer** | Mengimplementasikan tokenisasi SQL, pengenalan keyword secara case-insensitive, serta penanganan komentar satu baris dan komentar blok beserta deteksi komentar yang tidak ditutup. | Mengimplementasikan pengenalan operator perbandingan, termasuk `<>`, serta penanganan string dengan escaped quote seperti `''`. |
+| **Parser** | Mengimplementasikan parsing statement SELECT, INSERT, UPDATE, dan DELETE ke dalam AST, termasuk JOIN, subquery, INSERT ... SELECT, presedensi operator logika, serta LEFT JOIN dan LEFT OUTER JOIN. | Mengimplementasikan mekanisme error recovery agar parser dapat melanjutkan pemrosesan setelah menemukan statement yang mengalami kesalahan. |
+| **Resolver** | Mengimplementasikan resolusi alias tabel dan referensi kolom berdasarkan scope, termasuk penanganan kolom ambigu, subquery pada FROM, serta pemeriksaan referensi kolom. | Mengimplementasikan dan memperbaiki scope lookup, shadowing, correlated subquery, serta pembersihan scope pada statement DELETE. |
+| **Analyzer** | Melakukan pemeriksaan integrasi hasil analisis dengan tahapan Pipeline dan keluaran CLI. | Menangani klasifikasi operasi UPDATE yang melibatkan subquery. |
+| **Ground Truth** | Menggunakan data acuan untuk memvalidasi hasil ekstraksi dan membandingkannya dengan keluaran program. | Menyusun dan memvalidasi data acuan untuk file `pemeliharaan.sql`. |
+| **Pipeline dan CLI** | Memeriksa integrasi tahapan pemrosesan serta memperbaiki penanganan diagnostic, LexError, exit code, dan input file dengan nama yang sama. | Melakukan pengujian terhadap integrasi fitur yang telah diimplementasikan. |
+| **Pengujian** | Menambahkan pengujian tambahan untuk Lexer, Parser, dan Resolver serta melakukan validasi hasil ekstraksi menggunakan file SQL sampel. | Menambahkan dan menjalankan pengujian untuk fitur yang menjadi tanggung jawabnya serta melakukan pengujian silang terhadap implementasi Anggota A. |
+
+### Kolaborasi dan Integrasi
+
+Kedua anggota melakukan integrasi dan pengujian silang terhadap fitur yang telah diimplementasikan. Setiap anggota bertanggung jawab terhadap bagian pekerjaan masing-masing, sedangkan anggota lainnya turut melakukan review dan pengujian untuk memastikan fitur berjalan sesuai spesifikasi.
+
+Pengujian dilakukan melalui regression test, pengujian berbagai kasus SQL, dan pemeriksaan hasil ekstraksi terhadap ground truth. Kedua anggota juga menjalankan pengujian otomatis menggunakan pytest, mengevaluasi hasil parser dibandingkan metode regex, serta memeriksa keluaran CSV untuk memastikan hasil implementasi sesuai dengan spesifikasi.
+
+Melalui proses tersebut, kedua anggota dapat memahami alur kerja keseluruhan sistem, mulai dari lexical analysis, parsing dan pembentukan AST, resolusi nama, hingga analisis operasi CRUD.
